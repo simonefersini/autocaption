@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Questo NON è un Info.plist completo: è il blocco NSExtension da mettere
+  nell'Info.plist creato dal template "Final Cut Pro Workflow Extension".
+  Lascia tutto il resto come lo genera il template e sostituisci/controlla solo questi valori.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.FinalCut.WorkflowExtension</string>
+		<key>ProExtensionPrincipalViewControllerClass</key>
+		<string>AutoCaptionExtensionViewController</string>
+		<key>ProExtensionAttributes</key>
+		<dict>
+			<key>ContentViewMinimumWidth</key>
+			<integer>960</integer>
+			<key>ContentViewMinimumHeight</key>
+			<integer>640</integer>
+		</dict>
+	</dict>
+</dict>
+</plist>

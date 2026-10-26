@@ -1,0 +1,539 @@
+<title>AutoCaption per Final Cut</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: una "sala di montaggio" scura. Spiegazione a sinistra, demo funzionante (monitor + timeline) al centro, output in fondo. Tema unico scuro, scelto di proposito per richiamare Final Cut. */
+:root {
+  color-scheme: dark;
+  --bg: #16181d;
+  --panel: #1f2229;
+  --panel-2: #272b34;
+  --line: #343946;
+  --fg: #e7e9ee;
+  --muted: #9aa1b0;
+  --accent: #f2b33d;          /* testina / evidenze */
+  --title-clip: #8d6bd6;      /* titoli in FCP: viola */
+  --title-clip-2: #6d4fb3;
+  --audio-clip: #3fa36b;      /* audio in FCP: verde */
+  --video-clip: #3d74c9;      /* video in FCP: blu */
+  --danger: #e2685a;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1060px; margin: 0 auto; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(30px, 5vw, 48px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: clamp(22px, 3vw, 28px); font-weight: 700; }
+h3 { font-size: 17px; font-weight: 500; }
+p { margin: 0; max-width: 65ch; }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.9em; }
+code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
+section { display: grid; gap: 20px; }
+
+/* Intro */
+header { display: grid; gap: 14px; }
+header p { font-size: 17px; color: var(--muted); }
+
+/* Pipeline */
+.pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: step; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 8px; align-content: start; position: relative; min-width: 0; }
+.step::before { counter-increment: step; content: counter(step); font: 500 12px/1 var(--font-mono); color: var(--bg); background: var(--accent); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.step p { font-size: 13.5px; color: var(--muted); }
+.step .file { font: 12px/1.4 var(--font-mono); color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; overflow-wrap: anywhere; }
+@media (max-width: 860px) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .pipeline { grid-template-columns: 1fr; } }
+
+/* Demo */
+.demo { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: grid; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { font: 500 13px/1 var(--font-body); color: var(--muted); background: none; border: 0; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+.seg button:focus-visible, .play:focus-visible, .tab:focus-visible, .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.label { font: 500 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+@media (max-width: 760px) { .stage { grid-template-columns: 1fr; } }
+.viewer { padding: 20px; display: grid; place-items: center; background: #0e0f12; min-width: 0; }
+.frame { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 30% 20%, #4a5d78 0%, transparent 60%),
+    radial-gradient(90% 80% at 80% 90%, #6b4a3c 0%, transparent 65%),
+    linear-gradient(160deg, #2b3445, #1a1d24);
+  transition: max-width .3s ease; }
+.frame.vertical { aspect-ratio: 9 / 16; max-width: 270px; }
+.frame .subject { position: absolute; left: 50%; bottom: 0; width: 34%; aspect-ratio: 1 / 1.3; transform: translateX(-50%);
+  background: radial-gradient(circle at 50% 28%, #c9a98f 0 17%, transparent 17.5%), radial-gradient(ellipse at 50% 100%, #39465c 0 55%, transparent 56%); opacity: .9; }
+.frame.vertical .subject { width: 70%; }
+.cap { position: absolute; left: 6%; right: 6%; text-align: center; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-weight: 700; color: #fff;
+  -webkit-text-stroke: 0; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 2px #000, 2px 3px 4px rgba(0,0,0,.6); white-space: pre-line; line-height: 1.15; }
+.cap.classic { bottom: 8%; font-size: clamp(12px, 3.1cqw, 22px); }
+.cap.social, .cap.word { top: 58%; font-size: clamp(18px, 7cqw, 44px); letter-spacing: .01em; }
+.frame { container-type: inline-size; }
+.cap span.pop { display: inline-block; animation: pop .18s ease-out; }
+@keyframes pop { from { transform: scale(.82); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cap span.pop { animation: none; } .frame { transition: none; } }
+.tc { position: absolute; top: 8px; left: 10px; font: 500 11px/1 var(--font-mono); color: rgba(255,255,255,.75); background: rgba(0,0,0,.45); padding: 4px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+
+.side { border-left: 1px solid var(--line); padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; max-height: 420px; overflow: auto; }
+@media (max-width: 760px) { .side { border-left: 0; border-top: 1px solid var(--line); max-height: 260px; } }
+.list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.list li { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.list li:hover { background: var(--panel-2); }
+.list li.on { background: color-mix(in srgb, var(--title-clip) 28%, transparent); }
+.list .t { font: 12px/1.6 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.list .x { white-space: pre-line; overflow-wrap: anywhere; }
+
+.controls { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.play { font: 600 13px/1 var(--font-body); background: var(--accent); color: #1a1406; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+.clock { font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.timeline-wrap { overflow-x: auto; border-top: 1px solid var(--line); background: #13151a; }
+.timeline { position: relative; min-width: 640px; padding: 26px 16px 12px; display: grid; gap: 6px; cursor: pointer; user-select: none; }
+.ruler { position: absolute; top: 0; left: 16px; right: 16px; height: 22px; }
+.ruler span { position: absolute; top: 6px; font: 10px/1 var(--font-mono); color: var(--muted); transform: translateX(-50%); }
+.ruler span::after { content: ""; position: absolute; left: 50%; top: 12px; width: 1px; height: 5px; background: var(--line); }
+.lane { position: relative; height: 34px; }
+.lane .name { position: absolute; left: 0; top: -1px; font: 10px/1 var(--font-mono); color: var(--muted); }
+.clip { position: absolute; top: 0; bottom: 0; border-radius: 4px; overflow: hidden; font: 500 10.5px/1.2 var(--font-body); padding: 4px 5px; color: #fff; white-space: nowrap; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,.15); }
+.clip.title { background: linear-gradient(var(--title-clip), var(--title-clip-2)); }
+.clip.video { background: var(--video-clip); }
+.clip.audio { background: var(--audio-clip); display: flex; align-items: center; gap: 1px; padding: 2px; }
+.clip.audio i { flex: 1; background: rgba(255,255,255,.55); border-radius: 1px; min-width: 1px; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+.playhead::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: var(--accent); }
+
+/* Output */
+.out { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: end; }
+.tab { font: 500 13px/1 var(--font-body); background: none; color: var(--muted); border: 0; padding: 10px 14px; border-radius: 8px 8px 0 0; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--panel-2); color: var(--fg); }
+.copy { margin-left: auto; margin-bottom: 6px; font: 500 12px/1 var(--font-body); background: var(--panel-2); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.out .hint { padding: 12px 16px 0; font-size: 13.5px; color: var(--muted); }
+pre.code { margin: 0; padding: 14px 16px 18px; max-height: 340px; overflow: auto; font: 12px/1.55 var(--font-mono); color: #cfd4de; tab-size: 2; }
+pre.code .k { color: #c7a7ff; } pre.code .a { color: #8fc6ff; } pre.code .s { color: #f0c979; }
+
+/* Import */
+.import { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 700px) { .import { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; align-content: start; }
+.card ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+.card ol b { color: var(--fg); font-weight: 600; }
+.chip { justify-self: start; font: 500 11px/1 var(--font-mono); padding: 5px 8px; border-radius: 999px; }
+.chip.t { background: color-mix(in srgb, var(--title-clip) 30%, transparent); color: #d9c9ff; }
+.chip.s { background: color-mix(in srgb, var(--video-clip) 30%, transparent); color: #c4dafe; }
+
+.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 14px 16px; background: var(--panel); font-size: 14px; color: var(--muted); display: grid; gap: 6px; }
+.note b { color: var(--fg); }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Estensione per Final Cut Pro</span>
+    <h1>Come AutoCaption trasforma il parlato in titoli sulla timeline</h1>
+    <p>AutoCaption ascolta il tuo video, scrive cosa viene detto parola per parola con i tempi esatti, lo divide in sottotitoli e prepara un file da importare in Final Cut. Tutto gira sul Mac: l'audio non viene mai inviato a nessuno.</p>
+  </header>
+
+  <section aria-labelledby="h-pipeline">
+    <h2 id="h-pipeline">Cosa succede quando premi “Genera sottotitoli”</h2>
+    <div class="pipeline">
+      <div class="step">
+        <h3>Prende il file</h3>
+        <p>Un video o un audio, di solito il master esportato dalla tua timeline.</p>
+        <div class="file">MainView.swift</div>
+      </div>
+      <div class="step">
+        <h3>Estrae l'audio</h3>
+        <p>Lo converte in mono a 16 kHz, il formato che Whisper capisce.</p>
+        <div class="file">AudioExtractor.swift</div>
+      </div>
+      <div class="step">
+        <h3>Trascrive</h3>
+        <p>Whisper riconosce le parole e per ognuna dà inizio e fine in secondi.</p>
+        <div class="file">Transcriber.swift</div>
+      </div>
+      <div class="step">
+        <h3>Divide in sottotitoli</h3>
+        <p>Raggruppa le parole secondo righe, caratteri, pause e punteggiatura.</p>
+        <div class="file">Segmenter.swift</div>
+      </div>
+      <div class="step">
+        <h3>Esporta</h3>
+        <p>Scrive un FCPXML con un titolo per sottotitolo, oppure un file SRT.</p>
+        <div class="file">FCPXMLWriter.swift<br>SRTWriter.swift</div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-demo">
+    <div style="display:grid;gap:8px">
+      <h2 id="h-demo">Provalo qui</h2>
+      <p class="muted">Una simulazione con una frase di esempio già trascritta. Cambia lo stile e guarda come cambiano i sottotitoli, i titoli viola in timeline e il file generato più sotto. È lo stesso algoritmo dell'app, riscritto per il browser.</p>
+    </div>
+
+    <div class="demo">
+      <div class="toolbar">
+        <div class="group">
+          <span class="label" id="l-style">Stile</span>
+          <div class="seg" role="group" aria-labelledby="l-style" id="preset">
+            <button type="button" data-v="classic" aria-pressed="true">Classico (2 righe)</button>
+            <button type="button" data-v="social" aria-pressed="false">Social (2–3 parole)</button>
+            <button type="button" data-v="word" aria-pressed="false">Parola per parola</button>
+          </div>
+        </div>
+        <div class="group">
+          <span class="label" id="l-fmt">Formato</span>
+          <div class="seg" role="group" aria-labelledby="l-fmt" id="format">
+            <button type="button" data-v="h" aria-pressed="true">16:9</button>
+            <button type="button" data-v="v" aria-pressed="false">9:16</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="viewer">
+          <div class="frame" id="frame">
+            <div class="subject"></div>
+            <div class="tc" id="tc">00:00:00:00</div>
+            <div class="cap classic" id="cap"></div>
+          </div>
+        </div>
+        <div class="side">
+          <span class="label" id="count">Sottotitoli</span>
+          <ul class="list" id="list"></ul>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="play" id="play">▶ Riproduci</button>
+        <span class="clock" id="clock">0,0 s</span>
+        <span class="muted" style="font-size:13px">Clicca sulla timeline per spostare la testina.</span>
+      </div>
+
+      <div class="timeline-wrap">
+        <div class="timeline" id="timeline">
+          <div class="ruler" id="ruler"></div>
+          <div class="lane" id="lane-titles" aria-label="Titoli generati"></div>
+          <div class="lane"><div class="clip video" style="left:0;right:0">Il tuo video</div></div>
+          <div class="lane"><div class="clip audio" id="audio" style="left:0;right:0"></div></div>
+          <div class="playhead" id="playhead"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-out">
+    <div style="display:grid;gap:8px">
+      <h2 id="h-out">Il file che ottieni</h2>
+      <p class="muted">Questi sono i file veri che l'app scriverebbe per l'esempio qui sopra. Si aggiornano quando cambi stile o formato.</p>
+    </div>
+    <div class="out">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab" role="tab" id="t-fcpxml" aria-selected="true" aria-controls="code">FCPXML (titoli)</button>
+        <button type="button" class="tab" role="tab" id="t-srt" aria-selected="false" aria-controls="code">SRT (sottotitoli nativi)</button>
+        <button type="button" class="tab" role="tab" id="t-words" aria-selected="false" aria-controls="code">Parole di Whisper</button>
+        <button type="button" class="copy" id="copy">Copia</button>
+      </div>
+      <p class="hint" id="hint"></p>
+      <pre class="code" id="code" role="tabpanel"></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-import">
+    <h2 id="h-import">Come lo porti in Final Cut</h2>
+    <div class="import">
+      <div class="card">
+        <span class="chip t">FCPXML · titoli</span>
+        <h3>Titoli con il tuo stile</h3>
+        <ol>
+          <li>Premi <b>Apri in Final Cut Pro</b> nell'app.</li>
+          <li>Final Cut crea l'evento <b>AutoCaption</b> con il progetto <b>Sottotitoli – nome file</b>.</li>
+          <li>Apri il progetto, premi <b>⌘A</b> e poi <b>⌘C</b>.</li>
+          <li>Nella tua timeline porta la testina all'inizio e premi <b>⌘V</b>.</li>
+        </ol>
+        <p class="muted" style="font-size:14px">Ogni sottotitolo diventa un “Titolo base” che puoi modificare come qualsiasi altro titolo.</p>
+      </div>
+      <div class="card">
+        <span class="chip s">SRT · sottotitoli</span>
+        <h3>Sottotitoli nativi</h3>
+        <ol>
+          <li>Premi <b>Esporta SRT…</b> e salva il file.</li>
+          <li>In Final Cut scegli <b>File ▸ Importa ▸ Sottotitoli…</b></li>
+          <li>Il file finisce nel ruolo <b>Sottotitoli</b>, che puoi attivare, disattivare ed esportare con il video.</li>
+        </ol>
+        <p class="muted" style="font-size:14px">Ideale per YouTube e per i sottotitoli attivabili dallo spettatore.</p>
+      </div>
+    </div>
+    <div class="note">
+      <b>Perché esportare prima l'audio della timeline?</b>
+      <span>I tempi dei sottotitoli partono da 00:00 del file che dai ad AutoCaption. Se è il master della tua timeline, incollando i titoli con la testina all'inizio tutto risulta già a tempo. Imposta in AutoCaption lo stesso formato e frame rate del tuo progetto.</span>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  // ---- Parole di esempio con tempi, come le restituisce Whisper ----
+  const sentence = "Ciao a tutti e benvenuti. Oggi vi mostro come generare i sottotitoli in automatico dentro Final Cut Pro. Bastano pochi secondi: carichi il video, scegli lo stile e importi tutto nella timeline.";
+  const words = [];
+  let t = 0.4;
+  for (const raw of sentence.split(" ")) {
+    const core = raw.replace(/[.,:!?]/g, "");
+    const dur = 0.13 + 0.052 * core.length;
+    words.push({ text: " " + raw, start: +t.toFixed(2), end: +(t + dur).toFixed(2) });
+    t += dur + (/[.!?]$/.test(raw) ? 0.75 : /[:,]$/.test(raw) ? 0.22 : 0.04);
+  }
+  const DURATION = Math.ceil(t + 0.6);
+
+  // ---- Preset: stessi valori di SegmentationOptions in Models.swift ----
+  const PRESETS = {
+    classic: { maxCharsPerLine: 42, maxLines: 2, maxWords: null, maxDuration: 6, minDuration: 0.8, splitOnPause: 0.7, closeGaps: 0.3, splitOnSentenceEnd: true, uppercase: false, removePunctuation: false },
+    social:  { maxCharsPerLine: 18, maxLines: 1, maxWords: 3, maxDuration: 2.5, minDuration: 0.3, splitOnPause: 0.4, closeGaps: 0.4, splitOnSentenceEnd: true, uppercase: true, removePunctuation: true },
+    word:    { maxCharsPerLine: 20, maxLines: 1, maxWords: 1, maxDuration: 1.5, minDuration: 0.15, splitOnPause: 0.3, closeGaps: 0.3, splitOnSentenceEnd: true, uppercase: true, removePunctuation: true },
+  };
+
+  // ---- Porting di Segmenter.swift ----
+  function clean(w, o) {
+    let text = w.text.trim();
+    if (!text || (text.startsWith("<|") && text.endsWith("|>"))) return null;
+    if (o.removePunctuation) text = text.replace(/^[^\p{L}\p{N}'’]+|[^\p{L}\p{N}'’]+$/gu, "");
+    return text ? { text, start: w.start, end: Math.max(w.end, w.start) } : null;
+  }
+  function wrap(ws, maxChars, maxLines) {
+    const single = ws.join(" ");
+    if (maxLines <= 1 || ws.length <= 1 || single.length <= maxChars) return [single];
+    let best = { i: 1, score: Infinity };
+    for (let i = 1; i < ws.length; i++) {
+      const a = ws.slice(0, i).join(" ").length, b = ws.slice(i).join(" ").length;
+      const score = (Math.max(0, a - maxChars) + Math.max(0, b - maxChars)) * 1000 + Math.abs(a - b);
+      if (score < best.score) best = { i, score };
+    }
+    return [ws.slice(0, best.i).join(" "), ws.slice(best.i).join(" ")];
+  }
+  const fits = (g, o) => { const l = wrap(g.map(w => w.text), o.maxCharsPerLine, o.maxLines); return l.length <= o.maxLines && l.every(x => x.length <= o.maxCharsPerLine); };
+  function segment(input, o) {
+    const ws = input.map(w => clean(w, o)).filter(Boolean);
+    const groups = []; let cur = [];
+    for (const w of ws) {
+      if (cur.length) {
+        const last = cur[cur.length - 1];
+        if (w.start - last.end > o.splitOnPause || !fits([...cur, w], o) || w.end - cur[0].start > o.maxDuration
+            || (o.maxWords && cur.length >= o.maxWords) || (o.splitOnSentenceEnd && /[.?!…]$/.test(last.text))) {
+          groups.push(cur); cur = [];
+        }
+      }
+      cur.push(w);
+    }
+    if (cur.length) groups.push(cur);
+    const caps = groups.map(g => ({
+      text: wrap(g.map(w => o.uppercase ? w.text.toUpperCase() : w.text), o.maxCharsPerLine, o.maxLines).join("\n"),
+      start: g[0].start, end: g[g.length - 1].end,
+    }));
+    caps.forEach((c, i) => {
+      const next = i + 1 < caps.length ? caps[i + 1].start : Infinity;
+      if (c.end - c.start < o.minDuration) c.end = Math.min(c.start + o.minDuration, next);
+      if (next - c.end < o.closeGaps) c.end = next;
+      if (c.end > next) c.end = next;
+    });
+    return caps;
+  }
+
+  // ---- Porting di SRTWriter / FCPXMLWriter ----
+  const pad = (n, l = 2) => String(n).padStart(l, "0");
+  function srtTime(s) { const ms = Math.round(s * 1000); return `${pad(Math.floor(ms / 3600000))}:${pad(Math.floor(ms / 60000) % 60)}:${pad(Math.floor(ms / 1000) % 60)},${pad(ms % 1000, 3)}`; }
+  const srt = caps => caps.map((c, i) => `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${c.text}\n`).join("\n");
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  function fcpxml(caps, vertical) {
+    const fps = 25, ft = n => n === 0 ? "0s" : `${n * 100}/2500s`;
+    const w = vertical ? 1080 : 1920, h = vertical ? 1920 : 1080;
+    const posY = Math.round(-(h * (state.preset === "classic" ? 0.36 : 0.12)));
+    const size = state.preset === "classic" ? 56 : 90;
+    let prev = 0; const items = caps.map(c => { const s = Math.max(Math.round(c.start * fps), prev); const e = Math.max(Math.round(c.end * fps), s + 1); prev = e; return { text: c.text, s, len: e - s }; });
+    const total = Math.max(prev, DURATION * fps);
+    let x = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" frameDuration="100/2500s" width="${w}" height="${h}"/>
+    <effect id="r2" name="Basic Title" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>
+  </resources>
+  <library>
+    <event name="AutoCaption">
+      <project name="Sottotitoli – intervista">
+        <sequence format="r1" duration="${ft(total)}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+          <spine>
+            <gap name="Gap" offset="0s" start="0s" duration="${ft(total)}">
+`;
+    items.forEach((it, i) => {
+      x += `              <title ref="r2" lane="1" offset="${ft(it.s)}" duration="${ft(it.len)}" name="${esc(it.text.replace(/\n/g, " "))}">
+                <param name="Position" key="9999/999166631/999166633/1/100/101" value="0 ${posY}"/>
+                <text>
+                  <text-style ref="ts${i + 1}">${esc(it.text)}</text-style>
+                </text>
+                <text-style-def id="ts${i + 1}">
+                  <text-style font="Helvetica Neue" fontSize="${size}" fontFace="Bold" fontColor="1 1 1 1" alignment="center" strokeColor="0 0 0 1" strokeWidth="3"/>
+                </text-style-def>
+              </title>
+`;
+    });
+    return x + `            </gap>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>
+`;
+  }
+  function highlightXML(src) {
+    const e = src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return e.replace(/(&lt;\/?)([\w:!?-]+)/g, '$1<span class="k">$2</span>')
+            .replace(/([\w:-]+)=(".*?")/g, '<span class="a">$1</span>=<span class="s">$2</span>');
+  }
+
+  // ---- Stato e UI ----
+  const $ = id => document.getElementById(id);
+  const state = { preset: "classic", vertical: false, time: 0, playing: false, tab: "fcpxml", caps: [] };
+
+  // Ruler + forma d'onda (finta, ma coerente con le parole)
+  const ruler = $("ruler");
+  for (let s = 0; s <= DURATION; s += 2) { const sp = document.createElement("span"); sp.style.left = (s / DURATION * 100) + "%"; sp.textContent = s + "s"; ruler.appendChild(sp); }
+  const audio = $("audio");
+  for (let i = 0; i < 160; i++) {
+    const tt = i / 160 * DURATION;
+    const speaking = words.some(w => tt >= w.start - 0.05 && tt <= w.end + 0.05);
+    const bar = document.createElement("i");
+    bar.style.height = (speaking ? 30 + Math.abs(Math.sin(i * 1.7)) * 65 : 6 + Math.abs(Math.sin(i)) * 6) + "%";
+    audio.appendChild(bar);
+  }
+
+  function render() {
+    state.caps = segment(words, PRESETS[state.preset]);
+    const frame = $("frame"); frame.classList.toggle("vertical", state.vertical);
+    $("count").textContent = `${state.caps.length} sottotitoli`;
+    // Lista
+    const list = $("list"); list.innerHTML = "";
+    state.caps.forEach((c, i) => {
+      const li = document.createElement("li"); li.dataset.i = i;
+      li.innerHTML = `<span class="t">${fmtTC(c.start)}</span><span class="x"></span>`;
+      li.querySelector(".x").textContent = c.text;
+      li.addEventListener("click", () => seek(c.start + 0.01));
+      list.appendChild(li);
+    });
+    // Lane titoli
+    const lane = $("lane-titles"); lane.innerHTML = "";
+    state.caps.forEach(c => {
+      const d = document.createElement("div"); d.className = "clip title";
+      d.style.left = (c.start / DURATION * 100) + "%"; d.style.width = ((c.end - c.start) / DURATION * 100) + "%";
+      d.textContent = c.text.replace(/\n/g, " "); d.title = c.text;
+      lane.appendChild(d);
+    });
+    renderOutput();
+    lastIndex = -2; tick();
+  }
+
+  function renderOutput() {
+    const code = $("code");
+    if (state.tab === "fcpxml") {
+      $("hint").textContent = `Un progetto ${state.vertical ? "1080×1920" : "1920×1080"} a 25 fps con ${state.caps.length} titoli collegati sopra uno spazio vuoto. I tempi sono in fotogrammi: 100/2500s = 1 fotogramma.`;
+      code.innerHTML = highlightXML(fcpxml(state.caps, state.vertical));
+    } else if (state.tab === "srt") {
+      $("hint").textContent = "Il formato standard dei sottotitoli: numero, inizio --> fine, testo.";
+      code.textContent = srt(state.caps);
+    } else {
+      $("hint").textContent = "Il risultato grezzo della trascrizione: ogni parola con inizio e fine in secondi. Da qui partono tutti gli stili.";
+      code.textContent = words.map(w => `${w.start.toFixed(2).padStart(6)}s → ${w.end.toFixed(2).padStart(6)}s   ${w.text.trim()}`).join("\n");
+    }
+  }
+
+  const fmtTC = s => { const f = Math.floor((s % 1) * 25); const i = Math.floor(s); return `${pad(Math.floor(i / 3600))}:${pad(Math.floor(i / 60) % 60)}:${pad(i % 60)}:${pad(f)}`; };
+
+  let lastIndex = -2;
+  function tick() {
+    const tt = state.time;
+    $("playhead").style.left = `calc(16px + (100% - 32px) * ${tt / DURATION})`;
+    $("tc").textContent = fmtTC(tt);
+    $("clock").textContent = tt.toFixed(1).replace(".", ",") + " s";
+    const idx = state.caps.findIndex(c => tt >= c.start && tt < c.end);
+    if (idx !== lastIndex) {
+      lastIndex = idx;
+      const cap = $("cap");
+      cap.className = "cap " + state.preset;
+      cap.innerHTML = "";
+      if (idx >= 0) {
+        const span = document.createElement("span");
+        if (state.preset !== "classic") span.className = "pop";
+        span.textContent = state.caps[idx].text;
+        cap.appendChild(span);
+      }
+      document.querySelectorAll("#list li").forEach(li => li.classList.toggle("on", +li.dataset.i === idx));
+      const on = document.querySelector("#list li.on");
+      if (on && state.playing) on.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function seek(tt) { state.time = Math.max(0, Math.min(DURATION, tt)); tick(); }
+
+  let raf = 0, lastTs = 0;
+  function loop(ts) {
+    if (!state.playing) return;
+    if (lastTs) state.time += (ts - lastTs) / 1000;
+    lastTs = ts;
+    if (state.time >= DURATION) { state.time = DURATION; setPlaying(false); }
+    tick();
+    raf = requestAnimationFrame(loop);
+  }
+  function setPlaying(p) {
+    state.playing = p; $("play").textContent = p ? "❚❚ Pausa" : "▶ Riproduci";
+    if (p) { if (state.time >= DURATION) state.time = 0; lastTs = 0; raf = requestAnimationFrame(loop); } else cancelAnimationFrame(raf);
+  }
+  $("play").addEventListener("click", () => setPlaying(!state.playing));
+
+  $("timeline").addEventListener("pointerdown", e => {
+    const r = $("timeline").getBoundingClientRect();
+    const x = (e.clientX - r.left - 16) / (r.width - 32);
+    seek(x * DURATION);
+  });
+
+  function bindSeg(id, fn) {
+    $(id).addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      $(id).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      fn(b.dataset.v); render();
+    });
+  }
+  bindSeg("preset", v => state.preset = v);
+  bindSeg("format", v => state.vertical = v === "v");
+
+  ["fcpxml", "srt", "words"].forEach(k => $("t-" + k).addEventListener("click", () => {
+    state.tab = k;
+    document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", String(b.id === "t-" + k)));
+    renderOutput();
+  }));
+
+  $("copy").addEventListener("click", () => {
+    const text = $("code").textContent;
+    const done = () => { $("copy").textContent = "Copiato"; setTimeout(() => $("copy").textContent = "Copia", 1500); };
+    try {
+      navigator.clipboard.writeText(text).then(done, () => selectCode());
+    } catch { selectCode(); }
+  });
+  function selectCode() { const r = document.createRange(); r.selectNodeContents($("code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  seek(2.1);
+  render();
+})();
+</script>
